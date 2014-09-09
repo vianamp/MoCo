@@ -1,4 +1,4 @@
-MoCo
-====
+MitoGraph
+=========
 
-Model Convolution for Mitochondrial Networks
+Software for Quantifying Mitochondrial Content in Live Cells
