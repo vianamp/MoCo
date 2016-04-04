@@ -15,127 +15,7 @@
 // Peter Bankhead Chapter: Simulating Image Formation.
 // ============================================================*/
 
-#include <list>
-#include <cmath>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-
-/* VTK                                                         */
-
-#include <vtkMath.h>
-#include <vtkPolyLine.h>
-#include <vtkCellArray.h>
-#include <vtkLongArray.h>
-#include <vtkImageData.h>
-#include <vtkDataArray.h>
-#include <vtkTransform.h>
-#include <vtkDataObject.h>
-#include <vtkPNGWriter.h>
-#include <vtkTIFFWriter.h>
-#include <vtkFloatArray.h>
-#include <vtkVectorText.h>
-#include <vtkInformation.h>
-#include <vtkSphereSource.h>
-#include <vtkSmartPointer.h>
-#include <vtkImageResample.h>
-#include <vtkStructuredPoints.h>
-#include <vtkInformationVector.h>
-#include <vtkUnsignedCharArray.h>
-#include <vtkUnsignedShortArray.h>
-#include <vtkImageGaussianSmooth.h>
-#include <vtkStructuredPointsWriter.h>
-#include <vtkTransformPolyDataFilter.h>
-#include <vtkImageExtractComponents.h>
-#include <vtkStructuredPointsReader.h>
-#include <vtkImageGaussianSmooth.h>
-#include <vtkAppendPolyData.h>
-#include <vtkPolyDataWriter.h>
-#include <vtkPolyDataReader.h>
-#include <vtkContourFilter.h>
-#include <vtkDoubleArray.h>
-#include <vtkTIFFReader.h>
-#include <vtkTIFFWriter.h>
-#include <vtkPointData.h>
-#include <vtkImageRFFT.h>
-#include <vtkImageCast.h>
-#include <vtkPoints.h>
-
-/* ITK                                                         */
-
-#include <itkImageFileReader.h>
-#include <itkImageFileWriter.h>
-#include <itkSimpleFilterWatcher.h>
-#include <itkVTKImageToImageFilter.h>
-#include <itkImageToVTKImageFilter.h>
-#include <itkConvolutionImageFilter.h>
-#include <itkFFTConvolutionImageFilter.h>
-#include <itkImageToVTKImageFilter.h>
-
-#define DEBUG
-
-// Add background photons
-int _backgroundPhotons = 30;
-// Define the photon emission at the brightest point
-double _snr = 10.25;
-// Define the photon emission at the brightest point
-int _maxPhotonEmission = (int) ((_snr-1.0) * _backgroundPhotons);
-// Gaussian PSF
-double _psfSigma = 2.5;
-double _psfRadii = 5.0;
-// Simulate photon noise and Multiply by the exposure time
-int _exposureTime = 200;
-// Simulate the detector gain
-// (note this should really add Poisson noise too!)    
-int _detectorGain = 1;
-// Simulate the detector offset
-int _detectorOffset = 100;
-
-typedef float PType;
-typedef itk::Image< PType, 3 > IType;
-typedef itk::VTKImageToImageFilter<IType> VTK2ITK;
-typedef itk::ImageToVTKImageFilter<IType> ITK2VTK;
-typedef itk::ImageFileReader< IType > ReaderType;
-typedef itk::FFTConvolutionImageFilter< IType > FFTConvolutionType;
-
-int ssdx[26] = {-1, 0, 1,-1, 0, 1,-1, 0, 1,-1, 0, 1,-1, 1,-1, 0, 1,-1, 0, 1,-1, 0, 1,-1, 0, 1};
-int ssdy[26] = {-1,-1,-1,-1,-1,-1,-1,-1,-1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1};
-int ssdz[26] = { 1, 1, 1, 0, 0, 0,-1,-1,-1, 1, 1, 1, 0, 0,-1,-1,-1, 1, 1, 1, 0, 0, 0,-1,-1,-1};
-
-// Displays parameters that can be changed in this routine
-void _help();
-
-// Save VTK ImageData files
-void SaveImageData(vtkImageData *Image, const char FileName[]);
-
-// Save VTK PolyData files
-void SavePolyData(vtkPolyData *PolyData, const char FileName[]);
-
-// Export the max projection of a given stack
-void ExportMaxProjection(vtkImageData *Image, const char FileName[]);
-
-// Export a slice of a given stack
-void ExportSlice(vtkImageData *Image, const char FileName[], int z);
-
-// Export a stck a a sequence of TIFF files
-// This routine would be ideally replaced by another in which was
-// possible to export the whole stack a a single multi-paged TIFF
-// file. However, this is not possible at this moment because there
-// is a bug in the current version of vtkTIFFWriter class.
-void ExportTIFFSeq(vtkImageData *Image, const char FileName[]);
-
-// Main routine in which the vtkPolyData structure representing
-// the mitochondrial network is voxelized and convolved with a
-// theoretical point-spread-function (PSF).
-// Right now we are assuming a Guassian PSF.
-int Voxelization(const char _skell_path_prefix[], ReaderType *PSFReader);
-
-// Poisson random number generator
-int PoissonGen(double mu);
-
-/* ================================================================
-   AUXILIAR
-=================================================================*/
+#include "MoCo.h"
 
 int PoissonGen(double mu) {
     int k = 0;
@@ -148,11 +28,30 @@ int PoissonGen(double mu) {
 }
 
 
-/* ================================================================
-   I/O ROUTINES
-=================================================================*/
+int ScanFolderForThisExtension(std::string RootFolder, const char ext[], std::vector<std::string> *List) {
+    DIR *dir;
+    int ext_p;
+    struct dirent *ent;
+    std::string _dir_name;
+    if ((dir = opendir(RootFolder.c_str())) != NULL) {
+      while ((ent = readdir (dir)) != NULL) {
+        _dir_name = std::string(ent->d_name);
+        ext_p = (int)_dir_name.find(std::string(ext));
+        if (ext_p > 0) {
+            #ifdef DEBUG
+                printf("File found: %s\n",_dir_name.c_str());
+            #endif
+            List -> push_back(RootFolder+_dir_name.substr(0,ext_p));
+        }
+      }
+      closedir (dir);
+    } else {
+      return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS;
+}
 
-void ExportMaxProjection(vtkImageData *Image, const char FileName[]) {
+int ExportMaxProjection(vtkImageData *Image, const char FileName[]) {
 
     #ifdef DEBUG
         printf("Saving max projection...\n");
@@ -192,9 +91,10 @@ void ExportMaxProjection(vtkImageData *Image, const char FileName[]) {
         printf("\tFile Saved!\n");
     #endif
 
+    return EXIT_SUCCESS;
 }
 
-void ExportSlice(vtkImageData *Image, const char FileName[], int z) {
+int ExportSlice(vtkImageData *Image, const char FileName[], int z) {
 
     #ifdef DEBUG
         printf("Saving slice...\n");
@@ -230,9 +130,10 @@ void ExportSlice(vtkImageData *Image, const char FileName[], int z) {
         printf("\tFile Saved!\n");
     #endif
 
+    return EXIT_SUCCESS;
 }
 
-void ExportTIFFSeq(vtkImageData *Image, const char FileName[]) {
+int ExportTIFFSeq(vtkImageData *Image, const char FileName[]) {
 
     #ifdef DEBUG
         printf("Saving TIFF sequence...\n");
@@ -248,9 +149,10 @@ void ExportTIFFSeq(vtkImageData *Image, const char FileName[]) {
         printf("\tFile Saved!\n");
     #endif
 
+    return EXIT_SUCCESS;
 }
 
-void SaveImageData(vtkImageData *Image, const char FileName[]) {
+int SaveImageData(vtkImageData *Image, const char FileName[]) {
     #ifdef DEBUG
         printf("Saving ImageData file...\n");
     #endif
@@ -264,9 +166,11 @@ void SaveImageData(vtkImageData *Image, const char FileName[]) {
     #ifdef DEBUG
         printf("\tFile Saved!\n");
     #endif
+
+    return EXIT_SUCCESS;
 }
 
-void SavePolyData(vtkPolyData *PolyData, const char FileName[]) {
+int SavePolyData(vtkPolyData *PolyData, const char FileName[]) {
 
     #ifdef DEBUG
         printf("Saving PolyData from XYZ list...\n");
@@ -285,45 +189,18 @@ void SavePolyData(vtkPolyData *PolyData, const char FileName[]) {
     #ifdef DEBUG
         printf("\tFile Saved!\n");
     #endif
+
+    return EXIT_SUCCESS;
 }
 
-void ExportGraphProperties(vtkPolyData *Skell, const char FileName[]) {
-    vtkCell *Line;
-    double r1[3], r2[3], length;
-    vtkIdType i, k, n, line, N = 0;
-    for (line = Skell -> GetNumberOfCells(); line--;) {
-        Line = Skell -> GetCell(line);
-        n = Line -> GetNumberOfPoints() - 1;
-        for (k = n; k--;) {
-            Skell -> GetPoints() -> GetPoint(Line->GetPointId(k+1),r1);
-            Skell -> GetPoints() -> GetPoint(Line->GetPointId(k  ),r2);
-            length += sqrt(pow(r2[0]-r1[0],2)+pow(r2[1]-r1[1],2)+pow(r2[2]-r1[2],2));
-        }
-        i = Line -> GetPointId(0); N = (i > N) ? i : N;
-        i = Line -> GetPointId(n); N = (i > N) ? i : N;
-    }
-    N++;
-    FILE *f = fopen(FileName,"w");
-    fprintf(f,"N\tE\tL\n");
-    fprintf(f,"%d\t%d\t%1.3f\n",(int)N,(int)Skell->GetNumberOfCells(),length);
-    fclose(f);
-}
-
-/* ================================================================
-   MAIN ROUTINE
-=================================================================*/
-
-int Voxelization(const char _skell_path_prefix[], ReaderType *PSFReader) {
+int Voxelization(std::string _skell_path_prefix, _MoCoControl MoCoControl) {
 
     #ifdef DEBUG
-        printf("Reading skeleton file: %s.vtk\n",_skell_path_prefix);
+        printf("Reading skeleton file: %s.vtk\n",_skell_path_prefix.c_str());
     #endif
 
-    char FileName[256];
-    sprintf(FileName,"%s.vtk",_skell_path_prefix);
-
     vtkSmartPointer<vtkPolyDataReader> PolyReader = vtkSmartPointer<vtkPolyDataReader>::New();
-    PolyReader -> SetFileName(FileName);
+    PolyReader -> SetFileName((_skell_path_prefix+".vtk").c_str());
     PolyReader -> Update();
 
     vtkPolyData *Skell = PolyReader -> GetOutput();
@@ -350,13 +227,9 @@ int Voxelization(const char _skell_path_prefix[], ReaderType *PSFReader) {
         printf("\t\t z: [%1.2f,%1.2f]um\n",Bds[4],Bds[5]);
     #endif
 
-    double dxy = 0.056;
-    double dz  = 0.200;
-    double _rad = 0.15;
-
-    int nx = round((Bds[1]-Bds[0])/dxy); //70
-    int ny = round((Bds[3]-Bds[2])/dxy); //93
-    int nz = round((Bds[5]-Bds[4])/dxy);
+    int nx = round((Bds[1]-Bds[0])/MoCoControl.GetXYSpacing()); //70
+    int ny = round((Bds[3]-Bds[2])/MoCoControl.GetXYSpacing()); //93
+    int nz = round((Bds[5]-Bds[4])/MoCoControl.GetXYSpacing());
 
     double _off_x = 0.50 * (200-nx);
     double _off_y = 0.50 * (200-ny);
@@ -391,22 +264,29 @@ int Voxelization(const char _skell_path_prefix[], ReaderType *PSFReader) {
 
     vtkSmartPointer<vtkDataArray> Width = Skell -> GetPointData() -> GetArray("Width");
 
+    if (!Width) {
+        printf("No diameter found...\n");
+    }
+
     for (long int line = Skell->GetNumberOfCells(); line--;) {
 
         Line = Skell -> GetCell(line);
         for (idp = Line->GetNumberOfPoints()-1; idp--;) {
             Points -> GetPoint(Line->GetPointId(idp+1),r1);
             Points -> GetPoint(Line->GetPointId(idp  ),r2);
-            w1 = Width -> GetTuple1(Line->GetPointId(idp+1));
-            w2 = Width -> GetTuple1(Line->GetPointId(idp  ));
+            if (Width) {
+                w1 = Width -> GetTuple1(Line->GetPointId(idp+1));
+                w2 = Width -> GetTuple1(Line->GetPointId(idp  ));
+            } else {
+                w1 = w2 = 1.0;
+            }
+            ir1[0] = (int)(_off_x + (r1[0]-Bds[0])/MoCoControl.GetXYSpacing());
+            ir1[1] = (int)(_off_y + (r1[1]-Bds[2])/MoCoControl.GetXYSpacing());
+            ir1[2] = (int)(_off_z + (r1[2]-Bds[4])/MoCoControl.GetXYSpacing());
 
-            ir1[0] = (int)(_off_x + (r1[0]-Bds[0])/dxy);
-            ir1[1] = (int)(_off_y + (r1[1]-Bds[2])/dxy);
-            ir1[2] = (int)(_off_z + (r1[2]-Bds[4])/dxy);
-
-            ir2[0] = (int)(_off_x + (r2[0]-Bds[0])/dxy);
-            ir2[1] = (int)(_off_y + (r2[1]-Bds[2])/dxy);
-            ir2[2] = (int)(_off_z + (r2[2]-Bds[4])/dxy);
+            ir2[0] = (int)(_off_x + (r2[0]-Bds[0])/MoCoControl.GetXYSpacing());
+            ir2[1] = (int)(_off_y + (r2[1]-Bds[2])/MoCoControl.GetXYSpacing());
+            ir2[2] = (int)(_off_z + (r2[2]-Bds[4])/MoCoControl.GetXYSpacing());
 
             vec[0] = ir2[0] - ir1[0];
             vec[1] = ir2[1] - ir1[1];
@@ -423,7 +303,7 @@ int Voxelization(const char _skell_path_prefix[], ReaderType *PSFReader) {
                     Image -> SetScalarComponentFromDouble(x,y,z,0,-0.5*(w1+w2));
                 }
             } else {
-                Image -> SetScalarComponentFromDouble(ir1[0],ir1[1],ir1[2],0,-0.5*(w1+w2));
+                Image -> SetScalarComponentFromDouble(ir1[0],ir1[1],ir1[2],0,-0.5*(w1+w2)*1.25); /*Factor 1.25 compensate the underestimation of tubules width*/
             }
         }
     }
@@ -433,7 +313,7 @@ int Voxelization(const char _skell_path_prefix[], ReaderType *PSFReader) {
 
     vtkIdType id;
     double d0, v;
-    double dmax = 0.5 * wrange[1] / dxy;
+    double dmax = 0.5 * wrange[1] / MoCoControl.GetXYSpacing();
     int dmax_int = round(dmax);
 
     #ifdef DEBUG
@@ -445,7 +325,7 @@ int Voxelization(const char _skell_path_prefix[], ReaderType *PSFReader) {
 
     for (id = N; id--;) {
         Image -> GetPoint(id,r);
-        d0 = -(0.5/dxy) * Image -> GetPointData() -> GetScalars() -> GetTuple1(id);
+        d0 = -(0.5/MoCoControl.GetXYSpacing()) * Image -> GetPointData() -> GetScalars() -> GetTuple1(id);
         if ( d0 > 0 ) {
             Centers.push_back(id);
             for ( x = -dmax_int; x <= dmax_int; x++ ) {
@@ -475,18 +355,20 @@ int Voxelization(const char _skell_path_prefix[], ReaderType *PSFReader) {
         d = Image -> GetPointData() -> GetScalars() -> GetTuple1(id);
         if ( d > 0.0 ) {
             s = a - (a-b) * (d-1) / dmax;
-            Image -> GetPointData() -> GetScalars() -> SetTuple1(id,100*s);
+            Image -> GetPointData() -> GetScalars() -> SetTuple1(id,65535*s);
         }
     }
 
     /* IMAGE x PSF CONVOLUTION                                   */
 
-    if ( PSFReader ) {
+    if ( MoCoControl.ExternalPSF() ) {
+
+        ReaderType::Pointer PSFReader = ReaderType::New();
+        PSFReader -> SetFileName( MoCoControl.GetPSFFileName() );
 
         VTK2ITK::Pointer Filter = VTK2ITK::New();
         Filter -> SetInput(Image);
         Filter -> Update();
-
 
         FFTConvolutionType::Pointer FFTConv = FFTConvolutionType::New();
         FFTConv -> SetInput( Filter -> GetOutput() );
@@ -504,8 +386,8 @@ int Voxelization(const char _skell_path_prefix[], ReaderType *PSFReader) {
         vtkSmartPointer<vtkImageGaussianSmooth> GaussianKernel = vtkSmartPointer<vtkImageGaussianSmooth>::New();
         GaussianKernel -> SetInputData(Image);
         GaussianKernel -> SetDimensionality(3);
-        GaussianKernel -> SetRadiusFactors(_psfRadii,_psfRadii,_psfRadii);
-        GaussianKernel -> SetStandardDeviations(_psfSigma,_psfSigma,2*_psfSigma);
+        GaussianKernel -> SetRadiusFactors(MoCoControl.GetPSFRadii(),MoCoControl.GetPSFRadii(),MoCoControl.GetPSFRadii());
+        GaussianKernel -> SetStandardDeviations(MoCoControl.GetPSFStdev(),MoCoControl.GetPSFStdev(),2*MoCoControl.GetPSFStdev());
         GaussianKernel -> Update();
         Image -> ShallowCopy(GaussianKernel -> GetOutput());
 
@@ -514,10 +396,14 @@ int Voxelization(const char _skell_path_prefix[], ReaderType *PSFReader) {
     /* END OF CONVOLUTION                                         */
 
     // Define the photon emission at the brightest point
-    int _maxPhotonEmission = (int) ((_snr-1.0) * _backgroundPhotons);
-
     double range[2];
     Image -> GetScalarRange(range);
+    int _exposureTime = MoCoControl.GetExposureTime();
+    int _detectorGain = MoCoControl.GetDetectorGain();
+    int _detectorOffset = MoCoControl.GetDetectorOffSet();
+    int _backgroundPhotons = MoCoControl.GetBackgroundPhotons();
+    int _maxPhotonEmission = MoCoControl.GetMaximumPhotonEmission();
+
     for (id = N; id--;) {
         v = Image -> GetPointData() -> GetScalars() -> GetTuple1(id);
         v = v / range[1] * _maxPhotonEmission + _backgroundPhotons;
@@ -533,101 +419,82 @@ int Voxelization(const char _skell_path_prefix[], ReaderType *PSFReader) {
     Resample -> SetInputData(Image);
     Resample -> SetAxisMagnificationFactor(0,1);
     Resample -> SetAxisMagnificationFactor(1,1);
-    Resample -> SetAxisMagnificationFactor(2,dxy/dz);
+    Resample -> SetAxisMagnificationFactor(2,MoCoControl.GetXYSpacing()/MoCoControl.GetZSpacing());
     Resample -> Update();
     Image -> ShallowCopy(Resample -> GetOutput());
-
     Image -> SetSpacing(1.0,1.0,1.0);
 
-    VTK2ITK::Pointer FilterVTKITK = VTK2ITK::New();
-    FilterVTKITK -> SetInput(Image);
+    vtkSmartPointer<vtkImageCast> Cast = vtkSmartPointer<vtkImageCast>::New();
+    Cast -> SetInputData(Image);
+    Cast -> SetOutputScalarTypeToUnsignedShort();
+    Cast -> Update();
+
+    VTK2ITK_US::Pointer FilterVTKITK = VTK2ITK_US::New();
+    FilterVTKITK -> SetInput(Cast->GetOutput());
     FilterVTKITK -> Update();
 
-    sprintf(FileName,"%s_moco.tif",_skell_path_prefix);
+    WriterUSType::Pointer Writer = WriterUSType::New();
+    Writer -> SetInput(FilterVTKITK->GetOutput());
+    Writer -> SetFileName((_skell_path_prefix+"_moco.tif").c_str());
+    Writer -> Update();
 
-    typedef itk::ImageFileWriter< IType > WriterType;
-    WriterType::Pointer writer = WriterType::New();
-    writer -> SetInput( FilterVTKITK->GetOutput() );
-    writer -> SetFileName( FileName );
-    writer -> Update();
-
-    return 0;
+    return EXIT_SUCCESS;
 }
 
 int main(int argc, char *argv[]) {     
 
     srand(getpid());
+    std::string Path, PSF;
+    _MoCoControl MoCoControl;
 
-    int i;
-    char _imgpath[128];
-    char _psfpath[128];
-    long int _cc_value;
-    sprintf(_imgpath,"");
-    sprintf(_psfpath,"blank");
-
-    // Collecting input parameters
-    for (i = 0; i < argc; i++) {
+    for (int i = 0; i < argc; i++) {
+        
         if (!strcmp(argv[i],"-path")) {
-            sprintf(_imgpath,"%s//",argv[i+1]);
+            Path = std::string(argv[i+1]);
+            if (Path.back() != '/')
+                Path = Path + '/';
         }
-        if (!strcmp(argv[i],"-psf")) {
-            sprintf(_psfpath,"%s",argv[i+1]);
-        }
-        if (!strcmp(argv[i],"-background_photons")) {
-            _backgroundPhotons = atoi(argv[i+1]);
-        }
-        if (!strcmp(argv[i],"-snr")) {
-            _snr = atof(argv[i+1]);
-        }
+
+        if (!strcmp(argv[i],"-psf"))
+            MoCoControl.SetPSFFileName(std::string(argv[i+1]));
+        
+        if (!strcmp(argv[i],"-background_photons"))
+            MoCoControl.SetBackgroundPhotons(atoi(argv[i+1]));
+        
+        if (!strcmp(argv[i],"-snr"))
+            MoCoControl.SetSignalToNoiseRatio(atof(argv[i+1]));
+        
+        if (!strcmp(argv[i],"-exposure_time"))
+            MoCoControl.SetExposureTime(atoi(argv[i+1]));
+        
+        if (!strcmp(argv[i],"-detector_gain"))
+            MoCoControl.SetDetectorGain(atoi(argv[i+1]));
+        
+        if (!strcmp(argv[i],"-detector_offset"))
+            MoCoControl.SetDetectorOffSet(atoi(argv[i+1]));
+        
         if (!strcmp(argv[i],"-gaussian")) {
-            _psfSigma = atof(argv[i+2]);
-            _psfRadii = atof(argv[i+3]);
+            MoCoControl.SetPSFStdev(atof(argv[i+1]));
+            MoCoControl.SetPSFRadii(atof(argv[i+2]));
         }
-        if (!strcmp(argv[i],"-exposure_time")) {
-            _exposureTime = atof(argv[i+1]);
-        }
-        if (!strcmp(argv[i],"-detector_gain")) {
-            _detectorGain = atof(argv[i+1]);
-        }
-        if (!strcmp(argv[i],"-detector_offset")) {
-            _detectorOffset = atof(argv[i+1]);
-        }
+        
         if (!strcmp(argv[i],"-help")) {
             printf("./Moco -path [IMG] -psf [PSF] -background_photons [30] -snr [10.25] -gaussian [2.5 5.0] -exposure_time [200] -detector_gain [1] -detector_offset [100]\n");
-            return 1;
-        }        
+            return EXIT_SUCCESS;
+        }
+
+    }
+    
+    if (!MoCoControl.ExternalPSF())
+        printf("\tPSF Not Provided. Using Gaussian Kernel.\n");
+
+    std::vector<std::string> Files;
+    ScanFolderForThisExtension(Path,".vtk",&Files);
+
+    for (int i = 0; i < Files.size(); i++) {
+        Voxelization(Files[i],MoCoControl);
+        printf("%s [done]\n",Files[i].c_str());
     }
 
-    // Loading the PSF
-    ReaderType::Pointer psf_reader = NULL;
-    if (!strcmp(_psfpath,"blank")) {
-        #ifdef DEBUG
-            printf("\tPSF Not Provided. Using Gaussian Kernel.\n");
-        #endif
-    } else {
-        #ifdef DEBUG
-            printf("\tLoading PSF...\n");
-        #endif
-        psf_reader = ReaderType::New();
-        psf_reader -> SetFileName( _psfpath );
-    }
-
-    // Generating list of files to run
-    char _cmd[256];
-    sprintf(_cmd,"ls %s*_skeleton.vtk | sed -e 's/.vtk//' > %smoco.files",_imgpath,_imgpath);
-    system(_cmd);
-
-    // Voxelization
-    char _skell_path_prefix[256];
-    char _skellist_path_filename[256];
-    sprintf(_skellist_path_filename,"%smoco.files",_imgpath);
-    FILE *f = fopen(_skellist_path_filename,"r");
-    while (fgets(_skell_path_prefix,256, f) != NULL) {
-        _skell_path_prefix[strcspn(_skell_path_prefix, "\n" )] = '\0';
-        Voxelization(_skell_path_prefix,psf_reader);
-        printf("%s [done]\n",_skell_path_prefix);
-    }
-    fclose(f);
-
-    return 1;
+    return EXIT_SUCCESS;
 }
