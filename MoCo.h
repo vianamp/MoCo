@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <random>
 #include <dirent.h>
 
 /* VTK                                                         */
@@ -75,45 +76,11 @@ int ssdx[26] = {-1, 0, 1,-1, 0, 1,-1, 0, 1,-1, 0, 1,-1, 1,-1, 0, 1,-1, 0, 1,-1, 
 int ssdy[26] = {-1,-1,-1,-1,-1,-1,-1,-1,-1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1};
 int ssdz[26] = { 1, 1, 1, 0, 0, 0,-1,-1,-1, 1, 1, 1, 0, 0,-1,-1,-1, 1, 1, 1, 0, 0, 0,-1,-1,-1};
 
-// Save VTK ImageData files
-int SaveImageData(vtkImageData *Image, const char FileName[]);
-
-// Save VTK PolyData files
-int SavePolyData(vtkPolyData *PolyData, const char FileName[]);
-
-// Export the max projection of a given stack
-int ExportMaxProjection(vtkImageData *Image, const char FileName[]);
-
-// Export a slice of a given stack
-int ExportSlice(vtkImageData *Image, const char FileName[], int z);
-
-// Export a stck a a sequence of TIFF files
-// This routine would be ideally replaced by another in which was
-// possible to export the whole stack a a single multi-paged TIFF
-// file. However, this is not possible at this moment because there
-// is a bug in the current version of vtkTIFFWriter class.
-int ExportTIFFSeq(vtkImageData *Image, const char FileName[]);
-
-// Main routine in which the vtkPolyData structure representing
-// the mitochondrial network is voxelized and convolved with a
-// theoretical point-spread-function (PSF).
-// Right now we are assuming a Guassian PSF.
-int Voxelization(const char _skell_path_prefix[], ReaderType *PSFReader);
-
-// Poisson random number generator
 int PoissonGen(double mu);
 
 int ScanFolderForThisExtension(std::string RootFolder, const char ext[], std::vector<std::string> *List);
 
-int ExportMaxProjection(vtkImageData *Image, const char FileName[]);
-
-int ExportSlice(vtkImageData *Image, const char FileName[], int z);
-
-int ExportTIFFSeq(vtkImageData *Image, const char FileName[]);
-
 int SaveImageData(vtkImageData *Image, const char FileName[]);
-
-int SavePolyData(vtkPolyData *PolyData, const char FileName[]);
 
 int Voxelization(std::string _skell_path_prefix, _MoCoControl MoCoControl);
 
@@ -125,10 +92,11 @@ class _MoCoControl {
     int _detectorGain;
     int _detectorOffset;
     int _backgroundPhotons;
-    double _psfSigma, _psfRadii;
 
+    double _radii;
     bool _external_psf;
     std::string PSFFileName;
+    double _psfSigma, _psfRadii;
 
 public:
     _MoCoControl() {
@@ -141,6 +109,7 @@ public:
         SetBackgroundPhotons(30);
         SetPSFStdev(2.5);
         SetPSFRadii(5.0);
+        SetRadii(0.15);
 
         _external_psf = FALSE;
     }
@@ -150,6 +119,9 @@ public:
     
       void SetSignalToNoiseRatio(double snr) { _snr = snr;}
     double GetSignalToNoiseRatio()           {return _snr;}
+
+      void SetRadii(double radii) { _radii = radii;}
+    double GetRadii()             {  return _radii;}
 
       void SetXYSpacing(double dxy) { _dxy = dxy;}
     double GetXYSpacing()           {return _dxy;}
@@ -184,5 +156,15 @@ public:
     std::string GetPSFFileName() { return PSFFileName; }
 
     bool ExternalPSF() {return _external_psf;}
+
+    void DumpVars() {
+        printf("      Spacing = %1.3f,%1.3f\n",_dxy,_dz);
+        printf("          SNR = %1.3f\n",_snr);
+        printf("Exposure Time = %d\n",_exposureTime);
+        printf("     Detector = %d, %d\n",_detectorGain,_detectorOffset);
+        printf("      Photons = %d\n",_backgroundPhotons);
+        printf("        Radii = %1.3f\n",_radii);
+        printf(" External PSF = %s\n",(_external_psf)?"TRUE":"FALSE");
+    }
 
 };

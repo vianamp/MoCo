@@ -17,16 +17,12 @@
 
 #include "MoCo.h"
 
+std::random_device rd;
+std::mt19937 gen(rd());
 int PoissonGen(double mu) {
-    int k = 0;
-    double p = 1.0, L = exp(-mu);
-    do {
-        k++;
-        p *= (double)(rand()) / RAND_MAX;
-    } while (p>L);
-    return k;
+    std::poisson_distribution<> Poisson(mu);
+    return Poisson(gen);
 }
-
 
 int ScanFolderForThisExtension(std::string RootFolder, const char ext[], std::vector<std::string> *List) {
     DIR *dir;
@@ -51,107 +47,6 @@ int ScanFolderForThisExtension(std::string RootFolder, const char ext[], std::ve
     return EXIT_SUCCESS;
 }
 
-int ExportMaxProjection(vtkImageData *Image, const char FileName[]) {
-
-    #ifdef DEBUG
-        printf("Saving max projection...\n");
-    #endif
-
-    int *Dim = Image -> GetDimensions();
-    vtkSmartPointer<vtkImageData> MaxP = vtkSmartPointer<vtkImageData>::New();
-    MaxP -> SetDimensions(Dim[0],Dim[1],1);
-    vtkIdType N = Dim[0] * Dim[1];
-
-    vtkSmartPointer<vtkFloatArray> MaxPArray = vtkSmartPointer<vtkFloatArray>::New();
-    MaxPArray -> SetNumberOfComponents(1);
-    MaxPArray -> SetNumberOfTuples(N);
-
-    int x, y, z;
-    double v, vproj;
-    for (x = Dim[0]; x--;) {
-        for (y = Dim[1]; y--;) {
-            vproj = 0;
-            for (z = Dim[2]; z--;) {
-                v = Image -> GetScalarComponentAsFloat(x,y,z,0);
-                vproj = (v > vproj) ? v : vproj;
-            }
-            MaxPArray -> SetTuple1(MaxP->FindPoint(x,y,0),vproj);
-        }
-    }
-    MaxPArray -> Modified();
-
-    MaxP -> GetPointData() -> SetScalars(MaxPArray);
-
-    vtkSmartPointer<vtkTIFFWriter> TIFFWriter = vtkSmartPointer<vtkTIFFWriter>::New();
-    TIFFWriter -> SetFileName(FileName);
-    TIFFWriter -> SetInputData(MaxP);
-    TIFFWriter -> Write();
-
-    #ifdef DEBUG
-        printf("\tFile Saved!\n");
-    #endif
-
-    return EXIT_SUCCESS;
-}
-
-int ExportSlice(vtkImageData *Image, const char FileName[], int z) {
-
-    #ifdef DEBUG
-        printf("Saving slice...\n");
-    #endif
-
-    int *Dim = Image -> GetDimensions();
-    vtkSmartPointer<vtkImageData> MaxP = vtkSmartPointer<vtkImageData>::New();
-    MaxP -> SetDimensions(Dim[0],Dim[1],1);
-    vtkIdType N = Dim[0] * Dim[1];
-
-    vtkSmartPointer<vtkFloatArray> MaxPArray = vtkSmartPointer<vtkFloatArray>::New();
-    MaxPArray -> SetNumberOfComponents(1);
-    MaxPArray -> SetNumberOfTuples(N);
-
-    int x, y;
-    double v, vproj;
-    for (x = Dim[0]; x--;) {
-        for (y = Dim[1]; y--;) {
-            v = Image -> GetScalarComponentAsFloat(x,y,z,0);
-            MaxPArray -> SetTuple1(MaxP->FindPoint(x,y,0),v);
-        }
-    }
-    MaxPArray -> Modified();
-
-    MaxP -> GetPointData() -> SetScalars(MaxPArray);
-
-    vtkSmartPointer<vtkTIFFWriter> TIFFWriter = vtkSmartPointer<vtkTIFFWriter>::New();
-    TIFFWriter -> SetFileName(FileName);
-    TIFFWriter -> SetInputData(MaxP);
-    TIFFWriter -> Write();
-
-    #ifdef DEBUG
-        printf("\tFile Saved!\n");
-    #endif
-
-    return EXIT_SUCCESS;
-}
-
-int ExportTIFFSeq(vtkImageData *Image, const char FileName[]) {
-
-    #ifdef DEBUG
-        printf("Saving TIFF sequence...\n");
-    #endif
-
-    vtkSmartPointer<vtkTIFFWriter> Writer = vtkSmartPointer<vtkTIFFWriter>::New();
-    Writer -> SetInputData(Image);
-    Writer -> SetFilePattern("%s%04d.tif");
-    Writer -> SetFilePrefix(FileName);
-    Writer -> Write();
-
-    #ifdef DEBUG
-        printf("\tFile Saved!\n");
-    #endif
-
-    return EXIT_SUCCESS;
-}
-
 int SaveImageData(vtkImageData *Image, const char FileName[]) {
     #ifdef DEBUG
         printf("Saving ImageData file...\n");
@@ -170,32 +65,10 @@ int SaveImageData(vtkImageData *Image, const char FileName[]) {
     return EXIT_SUCCESS;
 }
 
-int SavePolyData(vtkPolyData *PolyData, const char FileName[]) {
-
-    #ifdef DEBUG
-        printf("Saving PolyData from XYZ list...\n");
-    #endif
-
-    #ifdef DEBUG
-        printf("\t#Points in PolyData file: %llu.\n",(vtkIdType)PolyData->GetNumberOfPoints());
-    #endif
-
-    vtkSmartPointer<vtkPolyDataWriter> Writer = vtkSmartPointer<vtkPolyDataWriter>::New();
-    Writer -> SetFileType(VTK_BINARY);
-    Writer -> SetFileName(FileName);
-    Writer -> SetInputData(PolyData);
-    Writer -> Write();
-
-    #ifdef DEBUG
-        printf("\tFile Saved!\n");
-    #endif
-
-    return EXIT_SUCCESS;
-}
-
 int Voxelization(std::string _skell_path_prefix, _MoCoControl MoCoControl) {
 
     #ifdef DEBUG
+        MoCoControl.DumpVars();
         printf("Reading skeleton file: %s.vtk\n",_skell_path_prefix.c_str());
     #endif
 
@@ -268,6 +141,8 @@ int Voxelization(std::string _skell_path_prefix, _MoCoControl MoCoControl) {
         printf("No diameter found...\n");
     }
 
+    std::vector<vtkIdType> IDs;
+    std::vector<double> Values;
     for (long int line = Skell->GetNumberOfCells(); line--;) {
 
         Line = Skell -> GetCell(line);
@@ -278,7 +153,7 @@ int Voxelization(std::string _skell_path_prefix, _MoCoControl MoCoControl) {
                 w1 = Width -> GetTuple1(Line->GetPointId(idp+1));
                 w2 = Width -> GetTuple1(Line->GetPointId(idp  ));
             } else {
-                w1 = w2 = 1.0;
+                w1 = w2 = MoCoControl.GetRadii() / MoCoControl.GetXYSpacing();
             }
             ir1[0] = (int)(_off_x + (r1[0]-Bds[0])/MoCoControl.GetXYSpacing());
             ir1[1] = (int)(_off_y + (r1[1]-Bds[2])/MoCoControl.GetXYSpacing());
@@ -300,51 +175,53 @@ int Voxelization(std::string _skell_path_prefix, _MoCoControl MoCoControl) {
                     x = ir1[0] + (int)(n*vec[0]);
                     y = ir1[1] + (int)(n*vec[1]);
                     z = ir1[2] + (int)(n*vec[2]);
-                    Image -> SetScalarComponentFromDouble(x,y,z,0,-0.5*(w1+w2));
+                    Values.push_back(0.5*(w1+w2));
+                    IDs.push_back(Image->FindPoint(x,y,z));
                 }
             } else {
-                Image -> SetScalarComponentFromDouble(ir1[0],ir1[1],ir1[2],0,-0.5*(w1+w2)*1.25); /*Factor 1.25 compensate the underestimation of tubules width*/
+                Values.push_back(0.5*(w1+w2)*1.25);
+                IDs.push_back(Image->FindPoint(ir1[0],ir1[1],ir1[2]));
             }
         }
     }
 
-    double wrange[2];
-    Skell -> GetScalarRange(wrange);
-
     vtkIdType id;
+    double wrange[2] = {1E2,0.00};
+    for (id = Values.size(); id--;) {
+        wrange[0] = (Values[id]<wrange[0]) ? Values[id] : wrange[0];
+        wrange[1] = (Values[id]>wrange[1]) ? Values[id] : wrange[1];
+    }
+
     double d0, v;
-    double dmax = 0.5 * wrange[1] / MoCoControl.GetXYSpacing();
-    int dmax_int = round(dmax);
+    double dmax = wrange[1];
+    int dmax_int = round(wrange[1]);
 
     #ifdef DEBUG
+        printf("\twrange = [%1.3f,%1.3f]\n",wrange[0],wrange[1]);
         printf("\tdmax = %1.4f\n",dmax);
         printf("\tdmax_int = %d\n",dmax_int);
     #endif
 
-    std::vector<vtkIdType> Centers;
-
-    for (id = N; id--;) {
+    for (long int p = 0; p < Values.size(); p++) {
+        id = IDs[p];
+        d0 = Values[p];
         Image -> GetPoint(id,r);
-        d0 = -(0.5/MoCoControl.GetXYSpacing()) * Image -> GetPointData() -> GetScalars() -> GetTuple1(id);
-        if ( d0 > 0 ) {
-            Centers.push_back(id);
-            for ( x = -dmax_int; x <= dmax_int; x++ ) {
-                for ( y = -dmax_int; y <= dmax_int; y++ ) {
-                    for ( z = -dmax_int; z <= dmax_int; z++ ) {
-                        d = sqrt(pow(x,2)+pow(y,2)+pow(z,2));
-                        if ( d <= dmax && d < d0 ) {
-                            Image -> SetScalarComponentFromDouble(r[0]+x,r[1]+y,r[2]+z,0,d+1);
-                        }
+        for ( x = -dmax_int; x <= dmax_int; x++ ) {
+            for ( y = -dmax_int; y <= dmax_int; y++ ) {
+                for ( z = -dmax_int; z <= dmax_int; z++ ) {
+                    d = sqrt(pow(x,2)+pow(y,2)+pow(z,2));
+                    if ( d <= dmax && d < d0 ) {
+                        v = Image -> GetScalarComponentAsDouble(r[0]+x,r[1]+y,r[2]+z,0);
+                        v = (v>0)?((d+1)<v?d+1:v):d+1;
+                        Image -> SetScalarComponentFromDouble(r[0]+x,r[1]+y,r[2]+z,0,v);
                     }
                 }
             }
         }
     }
 
-    for (long int p = 0; p < Centers.size(); p++) {
-        Image -> GetPointData() -> GetScalars() -> SetTuple1(Centers[p],1);
-    }
-    Centers.clear();
+    IDs.clear();
+    Values.clear();
 
     // Linear regression based on the tubule radius
     // f(d) =  a - (a-b) * (d-1) / dmax;
@@ -460,6 +337,9 @@ int main(int argc, char *argv[]) {
         
         if (!strcmp(argv[i],"-background_photons"))
             MoCoControl.SetBackgroundPhotons(atoi(argv[i+1]));
+
+        if (!strcmp(argv[i],"-radii"))
+            MoCoControl.SetRadii(atof(argv[i+1]));
         
         if (!strcmp(argv[i],"-snr"))
             MoCoControl.SetSignalToNoiseRatio(atof(argv[i+1]));
