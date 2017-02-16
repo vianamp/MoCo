@@ -93,6 +93,8 @@ class _MoCoControl {
     int _detectorOffset;
     int _backgroundPhotons;
 
+    bool _shared_bbox;
+
     double _radii;
     bool _external_psf;
     std::string PSFFileName;
@@ -112,6 +114,7 @@ public:
         SetRadii(0.15);
 
         _external_psf = FALSE;
+        _shared_bbox = TRUE;
     }
     ~_MoCoControl() {
 
@@ -137,6 +140,9 @@ public:
 
     void SetDetectorOffSet(int detctoff) {_detectorOffset = detctoff;}
      int GetDetectorOffSet()             {   return _detectorOffset;}
+
+    void SetSharedBBoxOff() {_shared_bbox = FALSE;}
+     int GetSharedBBox()    {return _shared_bbox;}
 
     void SetBackgroundPhotons(int backphotons) {_backgroundPhotons = backphotons;}
      int GetBackgroundPhotons()                {       return _backgroundPhotons;}
@@ -165,6 +171,7 @@ public:
         printf("      Photons = %d\n",_backgroundPhotons);
         printf("        Radii = %1.3f\n",_radii);
         printf(" External PSF = %s\n",(_external_psf)?"TRUE":"FALSE");
+        printf("  Shared BBox = %s\n",(_shared_bbox)?"TRUE":"FALSE");
     }
 
 };
